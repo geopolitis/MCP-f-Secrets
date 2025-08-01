@@ -1,0 +1,17 @@
+__pycache__
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.vscode/
+policy_validator.egg-info/
+build/
+dist/
+*.pyc
+*.pyo
+*.pyd
+htmlcov
+.coverage
+logs/
+*.log
+.env
+.venv/
