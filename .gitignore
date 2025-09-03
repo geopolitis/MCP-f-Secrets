@@ -12,7 +12,36 @@ dist/
 *.pyd
 htmlcov
 .coverage
+ .coverage.*
+ coverage.xml
 logs/
 *.log
 .env
 .venv/
+venv/
+env/
+.envrc
+.direnv/
+.python-version
+.idea/
+.DS_Store
+.ruff_cache/
+.tox/
+.hypothesis/
+.pyre/
+.pytype/
+.cache/
+.ipynb_checkpoints/
+.eggs/
+pip-wheel-metadata/
+.devcontainer/
+# Editor backups
+*~
+.#*
+*.swp
+*.swo
+# Local JWKS private keys (dev-only)
+jwks/private.pem
+local-vault/jwks/private.pem
+# PEMs (dev/test keys, certs)
+*.pem

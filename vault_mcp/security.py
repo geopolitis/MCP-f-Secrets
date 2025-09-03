@@ -26,7 +26,18 @@ def require_scopes(required: List[str]) -> Callable[[Principal], Principal]:
     return dep
 
 def kv_safe_path(prefix: str, rel_path: str) -> str:
-    safe = rel_path.strip("/").replace("..", "").replace("//", "/")
+    # Normalize the relative path, preventing traversal outside the prefix.
+    parts = str(rel_path or "").split("/")
+    stack = []
+    for part in parts:
+        if not part or part == ".":
+            continue
+        if part == "..":
+            if stack:
+                stack.pop()
+            continue
+        stack.append(part)
+    safe = "/".join(stack)
     return f"{prefix}/{safe}" if safe else prefix
 
 _rl_lock = Lock()

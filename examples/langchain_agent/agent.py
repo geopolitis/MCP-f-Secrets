@@ -17,7 +17,7 @@ load_dotenv()
 
 # ---- Config ---------------------------------------------------------------
 
-BASE_URL = os.environ.get("VAULT_MCP_BASE_URL", "http://localhost:8000")
+BASE_URL = os.environ.get("VAULT_MCP_BASE_URL", "http://127.0.0.1:8089")
 API_KEY = os.environ.get("VAULT_MCP_API_KEY")
 BEARER_TOKEN = os.environ.get("VAULT_MCP_BEARER_TOKEN")
 
@@ -73,58 +73,56 @@ class DecryptArgs(BaseModel):
 # ---- Tool Implementations -------------------------------------------------
 
 
-def write_secret(path: str, data: Dict[str, Any]) -> str:
-    r = client.put(f"/secrets/{path}", json={"data": data})
+def _rpc(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}
+    r = client.post(f"/mcp/rpc", json=body)
     r.raise_for_status()
     js = r.json()
-    return f"Wrote secret at '{path}', version {js.get('version')}"
+    if "error" in js:
+        raise RuntimeError(f"RPC error: {js['error']}")
+    return (js.get("result") or {}).get("content") or {}
+
+
+def write_secret(path: str, data: Dict[str, Any]) -> str:
+    res = _rpc("kv.write", {"path": path, "data": data})
+    ok = res.get("ok")
+    return f"Wrote secret at '{path}', ok={ok}"
 
 
 def read_secret(path: str, version: Optional[int] = None) -> str:
-    params = {"version": version} if version else None
-    r = client.get(f"/secrets/{path}", params=params)
-    r.raise_for_status()
-    js = r.json()
-    # do not expand values too much
-    keys = list((js.get("data") or {}).keys())
-    return f"Read secret '{path}', keys={keys}, version={js.get('version')}"
+    res = _rpc("kv.read", {"path": path, "version": version})
+    keys = list((res.get("data") or {}).keys())
+    return f"Read secret '{path}', keys={keys}, version={res.get('version')}"
 
 
 def delete_secret(path: str) -> str:
-    r = client.delete(f"/secrets/{path}")
-    r.raise_for_status()
+    _ = _rpc("kv.delete", {"path": path})
     return f"Deleted latest version for '{path}'"
 
 
 def list_secrets(prefix: str = "") -> str:
-    r = client.get("/secrets", params={"prefix": prefix})
-    r.raise_for_status()
-    js = r.json()
-    return f"Keys under '{prefix}': {js.get('keys')}"
+    res = _rpc("kv.list", {"prefix": prefix})
+    return f"Keys under '{prefix}': {res.get('keys')}"
 
 
 def undelete_versions(path: str, versions: list[int]) -> str:
-    r = client.post(f"/secrets/{path}:undelete", json={"versions": versions})
-    r.raise_for_status()
+    _ = _rpc("kv.undelete", {"path": path, "versions": versions})
     return f"Undeleted versions {versions} for '{path}'"
 
 
 def destroy_versions(path: str, versions: list[int]) -> str:
-    r = client.post(f"/secrets/{path}:destroy", json={"versions": versions})
-    r.raise_for_status()
+    _ = _rpc("kv.destroy", {"path": path, "versions": versions})
     return f"Destroyed versions {versions} for '{path}'"
 
 
 def transit_encrypt(key: str, plaintext_b64: str) -> str:
-    r = client.post("/transit/encrypt", json={"key": key, "plaintext": plaintext_b64})
-    r.raise_for_status()
-    return r.json().get("ciphertext", "")
+    res = _rpc("transit.encrypt", {"key": key, "plaintext": plaintext_b64})
+    return res.get("ciphertext", "")
 
 
 def transit_decrypt(key: str, ciphertext: str) -> str:
-    r = client.post("/transit/decrypt", json={"key": key, "ciphertext": ciphertext})
-    r.raise_for_status()
-    return r.json().get("plaintext", "")
+    res = _rpc("transit.decrypt", {"key": key, "ciphertext": ciphertext})
+    return res.get("plaintext", "")
 
 
 # ---- Build Tools -----------------------------------------------------------
@@ -209,4 +207,3 @@ if __name__ == "__main__":
     ex = build_agent()
     res = ex.invoke({"input": args.input})
     print("Result:\n", res)
-
