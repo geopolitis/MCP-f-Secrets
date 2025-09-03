@@ -7,6 +7,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response as FastAPIResponse
+from fastapi.middleware.cors import CORSMiddleware
 import hvac
 from .routes.kv import router as kv_router
 from .routes.transit import router as transit_router
@@ -15,7 +16,10 @@ from .routes.debug import router as debug_router
 from .routes.db import router as db_router
 from .routes.ssh import router as ssh_router
 from .mcp_mount import mount_fastapi_mcp
+from .routes.oauth_metadata import router as oauth_meta_router
+from .mcp_rpc import router as mcp_rpc_router
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest, PROCESS_COLLECTOR, PLATFORM_COLLECTOR
+from .settings import settings
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Vault MCP Bridge", version="0.2.0")
@@ -48,7 +52,11 @@ def create_app() -> FastAPI:
             fh.setFormatter(JSONFormatter()); req_logger.addHandler(fh)
         except Exception:
             pass
-        req_logger.setLevel(logging.INFO)
+        lvl = os.environ.get("LOG_LEVEL", "info").upper()
+        try:
+            req_logger.setLevel(getattr(logging, lvl, logging.INFO))
+        except Exception:
+            req_logger.setLevel(logging.INFO)
 
     if not resp_logger.handlers:
         h2 = logging.StreamHandler(); h2.setFormatter(JSONFormatter()); resp_logger.addHandler(h2)
@@ -57,7 +65,11 @@ def create_app() -> FastAPI:
             fh2.setFormatter(JSONFormatter()); resp_logger.addHandler(fh2)
         except Exception:
             pass
-        resp_logger.setLevel(logging.INFO)
+        lvl = os.environ.get("LOG_LEVEL", "info").upper()
+        try:
+            resp_logger.setLevel(getattr(logging, lvl, logging.INFO))
+        except Exception:
+            resp_logger.setLevel(logging.INFO)
 
     try:
         uv_err = logging.getLogger("uvicorn.error")
@@ -65,6 +77,21 @@ def create_app() -> FastAPI:
             ufh = RotatingFileHandler(logs_dir / "server.log", maxBytes=10_000_000, backupCount=5)
             ufh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
             uv_err.addHandler(ufh)
+    except Exception:
+        pass
+
+    # CORS (optional, for MCP Inspector over HTTP)
+    try:
+        from .settings import settings as _settings
+        origins = (_settings.CORS_ALLOW_ORIGINS or "").strip()
+        if origins:
+            origin_list = [o.strip() for o in origins.split(",") if o.strip()]
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=origin_list,
+                allow_methods=["GET", "POST", "OPTIONS"],
+                allow_headers=["*"]
+            )
     except Exception:
         pass
 
@@ -123,11 +150,16 @@ def create_app() -> FastAPI:
 
     # Routers
     app.include_router(health_router)
-    app.include_router(kv_router)
-    app.include_router(transit_router)
-    app.include_router(db_router)
-    app.include_router(ssh_router)
-    app.include_router(debug_router)
+    if settings.EXPOSE_REST_ROUTES:
+        app.include_router(kv_router)
+        app.include_router(transit_router)
+        app.include_router(db_router)
+        app.include_router(ssh_router)
+        app.include_router(debug_router)
+    # JSON-RPC MCP endpoints (HTTP transport)
+    app.include_router(mcp_rpc_router)
+    # OAuth metadata (discovery)
+    app.include_router(oauth_meta_router)
 
     mount_fastapi_mcp(app)
 
