@@ -44,17 +44,22 @@ def main():
     except Exception:
         pass
     logger = logging.getLogger("vault_mcp.stdio")
-    if not logger.handlers:
-        sh = logging.StreamHandler()
+    # Ensure our own handlers and prevent propagation so output is deterministic across Python versions
+    logger.propagate = False
+    sh = logging.StreamHandler()
+    fh = None
+    try:
+        fh = RotatingFileHandler(os.path.join(log_dir, "stdio.log"), maxBytes=5_000_000, backupCount=3)
+    except Exception:
         fh = None
-        try:
-            fh = RotatingFileHandler(os.path.join(log_dir, "stdio.log"), maxBytes=5_000_000, backupCount=3)
-        except Exception:
-            fh = None
-        for h in filter(None, [sh, fh]):
-            logger.addHandler(h)
-        lvl = os.environ.get("LOG_LEVEL", "INFO").upper()
-        logger.setLevel(getattr(logging, lvl, logging.INFO))
+    for h in filter(None, [sh, fh]):
+        logger.addHandler(h)
+    lvl = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(getattr(logging, lvl, logging.INFO))
+    try:
+        logger.info("stdio_startup")
+    except Exception:
+        pass
     for line in sys.stdin:
         line = line.strip()
         if not line:
