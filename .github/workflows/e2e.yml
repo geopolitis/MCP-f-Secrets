@@ -17,24 +17,43 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Python deps
         run: |
           python -m pip install -U pip
           python -m pip install -r requirements.txt
 
-      - name: Start dev Vault via Docker Compose
-        run: |
-          docker compose -f local-vault/docker-compose.yml up -d
-          # Wait briefly for Vault to be ready
-          sleep 5
-
-      - name: Run end-to-end checks
+      - name: Start FastAPI/MCP server (background)
         env:
           LOG_LEVEL: DEBUG
+        run: |
+          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8089 > server.log 2>&1 &
+          echo $! > server.pid
+
+      - name: Wait for /healthz
+        run: |
+          for i in {1..60}; do
+            if curl -sS http://127.0.0.1:8089/healthz | grep -q '"ok": true'; then
+              echo OK; exit 0; fi; sleep 0.5; done; echo "server not healthy"; cat server.log; exit 1
+
+      - name: MCP HTTP smoke (basic)
+        env:
+          API_KEY: dev-api-key
+        run: |
+          python scripts/mcp_http_smoke.py --base http://127.0.0.1:8089 --mode basic
+
+      - name: Start dev Vault via Docker Compose (for full path)
+        run: |
+          docker compose -f local-vault/docker-compose.yml up -d
+          sleep 5
+
+      - name: MCP HTTP smoke (full) and REST smoke
+        env:
+          API_KEY: dev-api-key
           VAULT_ADDR: http://127.0.0.1:8200
           VAULT_TOKEN: root
         run: |
-          bash scripts/e2e_local.sh
+          python scripts/mcp_http_smoke.py --base http://127.0.0.1:8089 --mode full --path configs/gha
+          BASE_URL=http://127.0.0.1:8089 bash scripts/smoke.sh
 
       - name: Upload logs
         if: always()
@@ -43,5 +62,5 @@ jobs:
           name: server-logs
           path: |
             logs/*.log
-            /tmp/fastmcp-server.out
-
+            server.log
+            server.pid
