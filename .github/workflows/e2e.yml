@@ -1,0 +1,47 @@
+name: E2E
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements.txt
+
+      - name: Start dev Vault via Docker Compose
+        run: |
+          docker compose -f local-vault/docker-compose.yml up -d
+          # Wait briefly for Vault to be ready
+          sleep 5
+
+      - name: Run end-to-end checks
+        env:
+          LOG_LEVEL: DEBUG
+          VAULT_ADDR: http://127.0.0.1:8200
+          VAULT_TOKEN: root
+        run: |
+          bash scripts/e2e_local.sh
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            logs/*.log
+            /tmp/fastmcp-server.out
+
