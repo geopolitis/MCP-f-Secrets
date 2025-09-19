@@ -12,6 +12,11 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8089"))
     reload = os.environ.get("RELOAD", "true").lower() in ("1", "true", "yes")
-    log_level = os.environ.get("LOG_LEVEL", "info")
+    log_level_env = os.environ.get("LOG_LEVEL", "info")
+    try:
+        # Allow numeric `logging` levels while normalizing strings for uvicorn
+        log_level = int(log_level_env)
+    except ValueError:
+        log_level = log_level_env.lower()
 
     uvicorn.run("main:app", host=host, port=port, reload=reload, log_level=log_level)
