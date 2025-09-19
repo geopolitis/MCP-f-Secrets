@@ -25,15 +25,21 @@ jobs:
       - name: Start FastAPI/MCP server (background)
         env:
           LOG_LEVEL: DEBUG
+          AUTH_API_KEY_ENABLED: "true"
+          API_KEYS_JSON: '{"dev-api-key":"agent_api"}'
+          CHILD_TOKEN_ENABLED: "false"
+          HOST: 127.0.0.1
+          PORT: "8089"
         run: |
-          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8089 > server.log 2>&1 &
+          # Start via main.py to ensure local import paths are correct
+          nohup python main.py > server.log 2>&1 &
           echo $! > server.pid
 
       - name: Wait for /healthz
         run: |
-          for i in {1..60}; do
+          for i in {1..120}; do
             if curl -sS http://127.0.0.1:8089/healthz | grep -q '"ok": true'; then
-              echo OK; exit 0; fi; sleep 0.5; done; echo "server not healthy"; cat server.log; exit 1
+              echo OK; exit 0; fi; sleep 0.5; done; echo "server not healthy"; echo '--- server.log ---'; (test -f server.log && tail -n +1 server.log) || echo '(no server.log)'; echo '--- logs/requests.log ---'; (test -f logs/requests.log && tail -n 200 logs/requests.log) || true; echo '--- logs/responses.log ---'; (test -f logs/responses.log && tail -n 200 logs/responses.log) || true; exit 1
 
       - name: MCP HTTP smoke (basic)
         env:
