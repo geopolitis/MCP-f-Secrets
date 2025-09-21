@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 AGENTS_FILE = Path(__file__).resolve().parents[1] / "config" / "agents.json"
 
@@ -20,6 +20,8 @@ class TaskRecord:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     notes: str = ""
+    action: str = "kv_read"
+    params: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict) -> "TaskRecord":
@@ -30,6 +32,8 @@ class TaskRecord:
             created_at=str(data.get("created_at", datetime.now(timezone.utc).isoformat())),
             updated_at=str(data.get("updated_at", datetime.now(timezone.utc).isoformat())),
             notes=str(data.get("notes", "")),
+            action=str(data.get("action", "kv_read")),
+            params=dict(data.get("params", {})),
         )
 
     def to_dict(self) -> Dict:
@@ -40,6 +44,8 @@ class TaskRecord:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "notes": self.notes,
+            "action": self.action,
+            "params": self.params,
         }
 
 
@@ -48,6 +54,8 @@ class AgentRecord:
     name: str
     description: str = ""
     use_llm: bool = True
+    llm_provider: Optional[str] = None
+    llm_api_key: Optional[str] = None
     credential_mode: str = "linked"  # linked | api_key | jwt
     credential_subject: Optional[str] = None
     api_key: Optional[str] = None
@@ -69,6 +77,8 @@ class AgentRecord:
             name=str(data.get("name")),
             description=str(data.get("description", "")),
             use_llm=bool(data.get("use_llm", True)),
+            llm_provider=data.get("llm_provider"),
+            llm_api_key=data.get("llm_api_key"),
             credential_mode=str(data.get("credential_mode", "linked")),
             credential_subject=data.get("credential_subject"),
             api_key=data.get("api_key"),
@@ -83,6 +93,8 @@ class AgentRecord:
             "name": self.name,
             "description": self.description,
             "use_llm": self.use_llm,
+            "llm_provider": self.llm_provider,
+            "llm_api_key": self.llm_api_key,
             "credential_mode": self.credential_mode,
             "credential_subject": self.credential_subject,
             "api_key": self.api_key,
@@ -146,8 +158,8 @@ def generate_id(prefix: str = "task") -> str:
     return f"{prefix}-{secrets.token_hex(8)}"
 
 
-def add_task(agent: AgentRecord, title: str, notes: str = "") -> TaskRecord:
-    task = TaskRecord(task_id=generate_id(), title=title, notes=notes)
+def add_task(agent: AgentRecord, title: str, notes: str = "", action: str = "kv_read", params: Optional[Dict[str, Any]] = None) -> TaskRecord:
+    task = TaskRecord(task_id=generate_id(), title=title, notes=notes, action=action, params=params or {})
     agent.tasks.append(task)
     agent.updated_at = datetime.now(timezone.utc).isoformat()
     return task
@@ -167,4 +179,3 @@ def update_task_status(agent: AgentRecord, task_id: str, status: str, notes: Opt
 def remove_task(agent: AgentRecord, task_id: str) -> None:
     agent.tasks = [t for t in agent.tasks if t.task_id != task_id]
     agent.updated_at = datetime.now(timezone.utc).isoformat()
-

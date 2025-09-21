@@ -35,6 +35,9 @@ env/
 .eggs/
 pip-wheel-metadata/
 .devcontainer/
+# Streamlit UI runtime state
+ui/config/agents.json
+ui/config/users.json
 # Editor backups
 *~
 .#*

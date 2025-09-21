@@ -28,6 +28,8 @@ jobs:
           AUTH_API_KEY_ENABLED: "true"
           API_KEYS_JSON: '{"dev-api-key":"agent_api"}'
           CHILD_TOKEN_ENABLED: "false"
+          VAULT_ADDR: http://127.0.0.1:8200
+          VAULT_TOKEN: root
           HOST: 127.0.0.1
           PORT: "8089"
         run: |
