@@ -17,7 +17,7 @@ from lib.session import get_auth_state  # noqa: E402
 
 
 st.title("Vault Operations")
-st.caption("Interact with KV secrets, transit, database, SSH, and MCP tools")
+st.caption("Interact with KV secrets, transit, database, SSH, MCP tools (KMS operations live on their own page)")
 
 auth_state = get_auth_state()
 
@@ -126,6 +126,7 @@ with transit_tab:
             decrypt_result.json(resp.json())
         except Exception as exc:
             decrypt_result.error(f"Decrypt failed: {exc}")
+
 
 with db_tab:
     st.subheader("Issue DB credentials")

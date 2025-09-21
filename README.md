@@ -36,6 +36,7 @@ Quickstart
   - `streamlit run ui/streamlit_app.py`
   - Use the **Manage Subjects & Keys** page to manage `config/users.json`, rotate credentials, and sync profiles to the sidebar.
   - JWT helpers in the UI require `JWT_HS256_SECRET` to be set before launch (e.g., `source config/dev-jwt.env` or run `scripts/run_dev_jwt.sh`).
+  - Use **AWS KMS Operations** to supply temporary AWS credentials (if needed) and call encrypt/decrypt, data-key, sign, and verify APIs.
 
 JWT quickstart (HS256):
 - Install helper deps: `pip install 'python-jose[cryptography]'`
@@ -54,19 +55,21 @@ JWT quickstart (HS256):
 Features
 - KV v2 secret CRUD with per-agent prefixes and safe pathing.
 - Transit: encrypt/decrypt, sign/verify, rewrap, and random bytes (base64/hex).
+- AWS KMS (optional): encrypt/decrypt, generate data keys, and sign/verify with native AWS keys.
 - Database: dynamic credentials issuance and lease management.
 - SSH: OTP credential and SSH certificate signing.
 - Auth: API Key, JWT (HS256 or RS256 via JWKS), mTLS via headers.
 - Child tokens per request (optional); per-agent in-memory rate limiting.
 - MCP: JSON-RPC over HTTP at `POST /mcp/rpc` (with `GET /mcp/sse` keepalive channel) and stdio transport via `scripts/mcp_stdio.py`.
-- Streamlit operations hub: tabs for Secrets, Transit, Database leases (issue/renew/revoke), SSH OTP/signing, and direct MCP tool calls.
-- Streamlit agent admin: create multiple AI agent profiles, toggle LLM usage, assign credentials (linked user/API key/JWT), define tasks, and monitor progress/status.
+- Streamlit operations hub: Vault Operations covers Secrets, Transit, Database, SSH, and MCP tools, while a dedicated AWS KMS page lets you enter temporary AWS credentials and invoke encrypt/decrypt, data-key, and signing APIs.
+- Streamlit agent admin: create multiple AI agent profiles, toggle LLM usage, assign credentials (linked user/API key/JWT), define tasks, capture a `secrets_backend` plan (Vault/KMS/Hybrid), and monitor progress/status.
 - MCP lifecycle: `initialize`, `tools/list`, `resources/list`, `prompts/list`, `tools/call`, `shutdown`. Protocol version: `2025-06-18`.
 - Tools exposed (with required scopes):
   - KV: `kv.read` (read, supports `version`), `kv.write` (write), `kv.list` (list), `kv.delete` (delete), `kv.undelete` (write), `kv.destroy` (write)
   - Transit: `transit.encrypt` (write), `transit.decrypt` (read), `transit.sign` (write), `transit.verify` (read), `transit.rewrap` (write), `transit.random` (read)
   - DB: `db.issue_creds` (write), `db.renew` (write), `db.revoke` (write)
   - SSH: `ssh.otp` (write), `ssh.sign` (write)
+  - KMS: `kms.encrypt` (write), `kms.decrypt` (read), `kms.generate_data_key` (write), `kms.sign` (write), `kms.verify` (read)
 - Observability endpoints: `/observability/summary` (Vault/API status + in-flight requests) and `/observability/logs/{requests|responses|server}` (tail JSON logs, read scope required).
 - Metrics at `/metrics`; optional OpenTelemetry via OTLP HTTP exporter.
 
@@ -127,6 +130,12 @@ Configuration (env)
   - `HOST`, `PORT`, `RELOAD`, `LOG_LEVEL` for `python main.py`
   - Logs directory: `LOG_DIR` (default: `./logs`)
   - `EXPOSE_REST_ROUTES` (default: true) — when false, disables REST feature routers (`/secrets`, `/transit`, `/db`, `/ssh`, `/whoami`) for MCP‑only deployments.
+  - AWS KMS (optional):
+    - `AWS_KMS_ENABLED` (default: false)
+    - `AWS_REGION` (required when enabling KMS unless provided by IAM role/default profile)
+    - `AWS_KMS_DEFAULT_KEY_ID` (optional convenience default for encrypt/data-key/sign requests)
+    - `AWS_KMS_ENDPOINT` (optional; point to LocalStack or custom endpoint)
+    - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` (optional; falls back to standard AWS credential resolution)
 - Observability:
   - Prometheus at `/metrics` (always enabled)
   - OpenTelemetry: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` (optional)
@@ -165,6 +174,12 @@ Endpoints
   - POST `/transit/verify` — `{ key, input, signature, hash_algorithm? }` (scope: read)
   - POST `/transit/rewrap` — `{ key, ciphertext }` (scope: write)
   - GET `/transit/random?bytes=32&format=base64|hex` (scope: read)
+- KMS endpoints are always exposed for development but return 503 unless `AWS_KMS_ENABLED=true`
+  - POST `/kms/encrypt` — `{ plaintext: <b64>, key_id?, encryption_context?, grant_tokens? }` (scope: write)
+  - POST `/kms/decrypt` — `{ ciphertext: <b64>, encryption_context?, grant_tokens? }` (scope: read)
+  - POST `/kms/data-key` — `{ key_id?, key_spec? | number_of_bytes?, encryption_context?, grant_tokens? }` (scope: write)
+  - POST `/kms/sign` — `{ key_id?, message? | message_digest?, signing_algorithm, message_type?, grant_tokens? }` (scope: write)
+  - POST `/kms/verify` — `{ key_id?, signature: <b64>, message? | message_digest?, signing_algorithm, message_type?, grant_tokens? }` (scope: read)
 - Database
   - POST `/db/creds/{role}` — issue dynamic DB creds (scope: write)
   - POST `/db/renew` — `{ lease_id, increment? }` (scope: write)
@@ -173,7 +188,8 @@ Endpoints
   - POST `/ssh/otp` — `{ role, ip, username, port? }` (scope: write)
   - POST `/ssh/sign` — `{ role, public_key, cert_type?, valid_principals?, ttl? }` (scope: write)
 - Health/Debug/Metrics
-  - GET `/healthz`, `/livez`, `/readyz`, `/whoami`, `/echo-headers`, `/metrics`
+- GET `/healthz`, `/livez`, `/readyz`, `/whoami`, `/echo-headers`, `/metrics`
+  - `/readyz` returns a JSON body detailing Vault (`ok`/`detail`) and, when enabled, AWS KMS readiness. Expect HTTP 503 with explanatory messages when Vault credentials are missing or KMS is misconfigured.
 - MCP
   - Mounted at `/mcp` when `fastapi-mcp` is available
 

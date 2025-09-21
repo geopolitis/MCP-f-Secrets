@@ -13,6 +13,7 @@ Key Features
 
 Auth & Scopes: Built-in API key, JWT (HS/RS with JWKS), and optional mTLS flows give you principals with scoped prefixes. Policy scripts (scripts/gen_policy.py, etc.) help mint matching Vault policies/tokens.
 Vault Engines: KV v2 helpers plus transit, database, and SSH wrappers cover secret rotation, encryption/signing, dynamic credentials, and SSH OTP/signing flows. Child-token support keeps agent actions isolated.
+AWS KMS: Optional AWS integration layers encrypt/decrypt, data-key generation, and signature/verification onto native KMS keys via boto3.
 MCP/HTTP Access: JSON-RPC tools and REST routes coexist, and there are smoke-test scripts (scripts/mcp_http_smoke.py, scripts/smoke.sh) to validate both paths. SSE broadcasts let other agents watch for secret changes.
 Operational Glue: Structured logs, Prometheus metrics, OTEL hooks, and e2e scripts (scripts/e2e_local.sh) handle observability and local verification.
 
@@ -30,6 +31,7 @@ Agents defined in the Streamlit admin live in `ui/config/agents.json`. Set `use_
     "credential_mode": "api_key",
     "credential_subject": "dev-bot",
     "api_key": "dev-api-key",
+    "secrets_backend": "vault",
     "tasks": [
       {
         "task_id": "kv-rotate",
@@ -47,6 +49,7 @@ You can also upload a JSON file with one or more agent records directly from the
 Within each agent, the Tasks panel accepts JSON uploads so you can attach existing task definitions without retyping them. These runtime JSON files live under `ui/config/` and stay out of version control.
 The admin console groups controls into **Overview**, **Import**, **Create**, and **Manage** tabs so you can scan the roster, bulk load JSON, add fresh agents, or tune a single profile (including task uploads) without scrolling.
 Inside **Manage**, the **Details**, **Tasks**, and **Danger zone** subtabs separate editing, task operations, and destructive actions so critical buttons (like delete) stay grouped and deliberate.
+Each agent records a `secrets_backend` plan (`vault`, `kms`, or `hybrid`) so you can document whether that workflow relies on Vault namespaces, AWS KMS primitives, or a mix of both.
 
 
 Overview
@@ -61,7 +64,9 @@ Applies request-scoped rate limiting and path sanitization before hitting Vault,
 HTTP Routes
 
 Health endpoints plus readiness checks (now with standardized JSON), metrics, optional CORS, and Prometheus instrumentation (vault_mcp/routes/health.py:1, vault_mcp/app.py:1).
+`/readyz` includes per-service details (Vault and AWS KMS when enabled) so you can tell which dependency blocks readiness.
 REST surfaces for KV v2 CRUD/version ops, transit crypto, dynamic DB creds/lease ops, SSH OTP and key signing, and debugging helpers, all scope-gated and logged (vault_mcp/routes/kv.py:1, vault_mcp/routes/transit.py, vault_mcp/routes/db.py, vault_mcp/routes/ssh.py, vault_mcp/routes/debug.py).
+AWS KMS endpoints cover encrypt/decrypt, data-key generation, and sign/verify. They remain visible for development (vault_mcp/routes/kms.py:1) but respond with 503 if `AWS_KMS_ENABLED` is false. The Streamlit **AWS KMS Operations** page lets you supply temporary AWS credentials per session.
 MCP Integration
 
 Implements an MCP JSON-RPC router under /mcp/rpc, exporting tool schemas for each Vault capability and streaming resource change events via server-sent events (vault_mcp/mcp_rpc.py:1).
@@ -78,6 +83,7 @@ Tool Coverage
 
 KV Suite: kv.read, kv.write, kv.list, kv.delete, kv.undelete, kv.destroy; scoped to the caller’s Vault prefix, with resource-change events emitted on mutations and optional version targeting for reads/undelete/destroy (vault_mcp/mcp_rpc.py:33-149).
 Transit Crypto: transit.encrypt, transit.decrypt, transit.sign, transit.verify, transit.rewrap, transit.random; wrap Vault Transit APIs for symmetric, signing, and randomness operations, converting outputs (e.g., base64 vs hex) when requested (vault_mcp/mcp_rpc.py:150-210).
+AWS KMS: kms.encrypt, kms.decrypt, kms.generate_data_key, kms.sign, kms.verify; provide native AWS KMS operations (base64 payloads, optional encryption context/grant tokens) when KMS support is enabled (vault_mcp/mcp_rpc.py:210-275, vault_mcp/aws_kms.py:1).
 Database Leases: db.issue_creds, db.renew, db.revoke; issue dynamic database credentials and manage leases using Vault’s database secrets engine, returning lease metadata where available (vault_mcp/mcp_rpc.py:211-234).
 SSH Access: ssh.otp, ssh.sign; generate one-time SSH passwords or sign public keys via Vault’s SSH secrets engine (vault_mcp/mcp_rpc.py:235-250).
 Protocol Shape

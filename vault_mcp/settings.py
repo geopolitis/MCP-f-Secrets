@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     # SSE keepalive interval (seconds)
     SSE_KEEPALIVE_SECONDS: int = 15
 
+    # AWS KMS integration
+    AWS_KMS_ENABLED: bool = False
+    AWS_REGION: Optional[str] = None
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_SESSION_TOKEN: Optional[str] = None
+    AWS_KMS_ENDPOINT: Optional[str] = None
+    AWS_KMS_DEFAULT_KEY_ID: Optional[str] = None
+
     # Do NOT auto-load .env; prefer environment variables and an optional config file.
     # A config file path can be provided via APP_CONFIG_FILE (JSON/TOML/YAML). Env vars override file.
     model_config = SettingsConfigDict(case_sensitive=True)

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE_URL=${BASE_URL:-http://127.0.0.1:8089}
-API_KEY=${API_KEY:-dev-key}
+API_KEY=${API_KEY:-dev-api-key}
 PATH1=${PATH1:-configs/demo}
 TRANSIT_KEY=${TRANSIT_KEY:-mcp}
 
@@ -57,4 +57,3 @@ if [ "${DEC}" != "${PT}" ]; then
 fi
 
 echo "[smoke] OK"
-

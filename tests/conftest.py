@@ -15,6 +15,8 @@ def app():
     os.environ["API_KEYS_JSON"] = '{"dev-key":"agent_api"}'
     os.environ["CHILD_TOKEN_ENABLED"] = "false"
     os.environ["SSE_KEEPALIVE_SECONDS"] = "1"
+    os.environ.setdefault("AWS_KMS_ENABLED", "true")
+    os.environ.setdefault("AWS_REGION", "us-east-1")
     from vault_mcp.app import create_app
     from vault_mcp.settings import settings as _settings
     import json

@@ -1,3 +1,6 @@
+from moto import mock_aws
+
+
 def test_mcp_initialize_and_tools_and_kv_calls(client, monkeypatch):
     # Patch kv_read/kv_write used by MCP to an in-memory store
     store = {}
@@ -61,3 +64,54 @@ def test_mcp_initialize_and_tools_and_kv_calls(client, monkeypatch):
     body = r.json()["result"]["content"]
     assert body["data"]["foo"] == "bar"
 
+
+@mock_aws
+def test_mcp_kms_encrypt_decrypt_tool(client, monkeypatch):
+    import base64
+    import boto3
+    from vault_mcp import aws_kms, settings as settings_module
+
+    # Ensure client_for_principal doesn't hit Vault
+    import vault_mcp.mcp_rpc as mcp
+    monkeypatch.setattr(mcp, "client_for_principal", lambda p: object())
+
+    region = settings_module.settings.AWS_REGION or "us-east-1"
+    kms = boto3.client("kms", region_name=region)
+    key_id = kms.create_key(KeyUsage="ENCRYPT_DECRYPT", KeySpec="SYMMETRIC_DEFAULT")["KeyMetadata"]["KeyId"]
+
+    previous_default = settings_module.settings.AWS_KMS_DEFAULT_KEY_ID
+    settings_module.settings.AWS_KMS_DEFAULT_KEY_ID = key_id
+    aws_kms.reset_kms_client_cache()
+
+    headers = {"X-API-Key": "dev-key", "Content-Type": "application/json"}
+    plaintext = base64.b64encode(b"mcp-kms").decode()
+
+    enc_resp = client.post(
+        "/mcp/rpc",
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": "kms-enc",
+            "method": "tools/call",
+            "params": {"name": "kms.encrypt", "arguments": {"plaintext": plaintext, "aws": {"region": region}}},
+        },
+    )
+    assert enc_resp.status_code == 200
+    ciphertext = enc_resp.json()["result"]["content"]["ciphertext"]
+
+    dec_resp = client.post(
+        "/mcp/rpc",
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": "kms-dec",
+            "method": "tools/call",
+            "params": {"name": "kms.decrypt", "arguments": {"ciphertext": ciphertext, "aws": {"region": region}}},
+        },
+    )
+    assert dec_resp.status_code == 200
+    output = dec_resp.json()["result"]["content"]["plaintext"]
+    assert base64.b64decode(output) == b"mcp-kms"
+
+    settings_module.settings.AWS_KMS_DEFAULT_KEY_ID = previous_default
+    aws_kms.reset_kms_client_cache()
