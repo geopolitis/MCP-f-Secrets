@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
@@ -16,8 +17,32 @@ class KMSDisabledError(RuntimeError):
     """Raised when AWS KMS support is disabled in configuration."""
 
 
+def _get_env_bool(name: str) -> Optional[bool]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _kms_enabled() -> bool:
+    env_value = _get_env_bool("AWS_KMS_ENABLED")
+    if env_value is not None:
+        return env_value
+    return bool(settings.AWS_KMS_ENABLED)
+
+
+def kms_enabled() -> bool:
+    """Return whether AWS KMS support is enabled via settings or environment."""
+    return _kms_enabled()
+
+
 def _ensure_enabled() -> None:
-    if not settings.AWS_KMS_ENABLED:
+    if not _kms_enabled():
         raise KMSDisabledError("AWS KMS support is disabled")
 
 
@@ -86,7 +111,7 @@ def reset_kms_client_cache() -> None:
 
 def kms_health_check() -> Tuple[bool, str]:
     """Return (ok, detail) describing the ability to construct a KMS client."""
-    if not settings.AWS_KMS_ENABLED:
+    if not _kms_enabled():
         return True, "disabled"
     try:
         _kms_client()
@@ -190,8 +215,14 @@ def kms_generate_data_key(
         if grant_tokens:
             payload["GrantTokens"] = grant_tokens
         response = client.generate_data_key(**payload)
+        key_id_value = resolved_key
+        resp_key = response.get("KeyId")
+        if isinstance(resp_key, str) and resolved_key in resp_key:
+            key_id_value = resolved_key
+        elif isinstance(resp_key, str):
+            key_id_value = resp_key
         return {
-            "key_id": response.get("KeyId", resolved_key),
+            "key_id": key_id_value,
             "ciphertext": _b64encode(response["CiphertextBlob"]),
             "plaintext": _b64encode(response["Plaintext"]),
         }

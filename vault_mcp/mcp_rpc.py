@@ -20,6 +20,7 @@ from .vault import (
 )
 from .aws_kms import (
     KMSDisabledError,
+    kms_enabled,
     kms_decrypt as aws_kms_decrypt,
     kms_encrypt as aws_kms_encrypt,
     kms_generate_data_key as aws_kms_generate_data_key,
@@ -382,7 +383,7 @@ def _require_scopes(p: Principal, needed: List[str]):
 
 async def _handle_tool_call_async(name: str, args: Dict[str, Any], p: Principal) -> Any:
     client = client_for_principal(p)
-    if name.startswith("kms.") and not settings.AWS_KMS_ENABLED:
+    if name.startswith("kms.") and not kms_enabled():
         raise RuntimeError("AWS KMS support is disabled")
     if name == "kv.read":
         _require_scopes(p, ["read"])

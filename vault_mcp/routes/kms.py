@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from .utils import Router as APIRouter
 from ..aws_kms import (
     KMSDisabledError,
+    kms_enabled,
     kms_decrypt,
     kms_encrypt,
     kms_generate_data_key,
@@ -27,7 +28,7 @@ _resp_logger = logging.getLogger("vault_mcp.response")
 
 
 def _ensure_enabled():
-    if not settings.AWS_KMS_ENABLED:
+    if not kms_enabled():
         raise HTTPException(status_code=503, detail="AWS KMS support is disabled")
 
 

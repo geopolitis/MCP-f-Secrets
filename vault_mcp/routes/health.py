@@ -8,7 +8,7 @@ import hvac
 
 from ..vault import new_vault_client
 from ..settings import settings
-from ..aws_kms import kms_health_check
+from ..aws_kms import kms_health_check, kms_enabled
 
 
 def _json_ok(payload: dict, *, status_code: int = 200) -> Response:
@@ -49,10 +49,12 @@ async def readyz():
         vault_status = {"ok": False, "detail": f"Vault error: {exc}"}
         overall_ok = False
 
-    if settings.AWS_KMS_ENABLED:
+    kms_env_enabled = kms_enabled()
+    kms_required = bool(settings.AWS_KMS_ENABLED)
+    if kms_env_enabled:
         kms_ok, kms_detail = kms_health_check()
         kms_status = {"ok": kms_ok, "detail": kms_detail or ("ready" if kms_ok else "error")}
-        if not kms_ok:
+        if not kms_ok and kms_required:
             overall_ok = False
     else:
         kms_status = {"ok": True, "detail": "disabled"}
