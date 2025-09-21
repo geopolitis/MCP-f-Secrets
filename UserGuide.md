@@ -46,7 +46,7 @@ Quick links on the landing page:
 - MCP endpoints (`POST /mcp/rpc`, `/mcp/sse`) and a pre-filled link to the hosted MCP Inspector.
 
 ## 5. Operate Vault Workflows
-The **Vault Operations** page provides helper forms across five tabs:
+The **Vault Operations** page provides helper forms across four tabs, plus a generic tool runner:
 
 | Tab      | Capabilities |
 |----------|--------------|
@@ -58,26 +58,29 @@ The **Vault Operations** page provides helper forms across five tabs:
 
 All actions reuse the sidebar credentials, so you can test multiple users by switching profiles.
 
-## 6. Administer AI Agents
+## 6. AWS KMS Operations
+Use the dedicated **AWS KMS Operations** page to store temporary AWS credentials (region, access key/secret, session token, endpoint override) and call KMS encrypt/decrypt, data-key, sign, and verify APIs. Payload editors include optional base64 helpers and JSON inputs for encryption context and grant tokens.
+
+## 7. Administer AI Agents
 The **AI Agent Administration** page manages application-facing agents:
 
 1. **Overview tab** – filter/search agents, inspect LLM usage, credential mode, task counts, and export to CSV.
 2. **Import tab** – upload a single agent or an array of agents; valid records persist immediately so you can seed environments in bulk.
 3. **Create tab** – define name/description, toggle LLM, select credential mode (linked user/API key/JWT), then click *Create*. 
-4. **Manage tab** – pick an agent to update metadata, toggle LLM, adjust credentials, upload task JSON (object or list), add manual tasks, change status/notes, or run tasks. Use the **Danger zone** subtab to delete the agent after explicit confirmation.
+4. **Manage tab** – pick an agent to update metadata, choose a secrets backend plan (Vault/KMS/Hybrid), toggle LLM, adjust credentials, upload task JSON (object or list), add manual tasks, change status/notes, or run tasks. Use the **Danger zone** subtab to delete the agent after explicit confirmation.
 
 All agent data is persisted in `ui/config/agents.json` so the configuration survives restarts, but the repository keeps this directory gitignored so each environment maintains its own state.
 
-## 7. Correlation, Tracing & Metrics
+## 8. Correlation, Tracing & Metrics
 - Every HTTP response carries `X-Correlation-Id`. When OTEL is configured (`OTEL_EXPORTER_OTLP_ENDPOINT`), `X-Trace-Id` accompanies it for cross-system tracing.
 - Prometheus exposes `http_requests_with_correlation_total` alongside existing counters/histograms (`/metrics`).
 
-## 8. CLI Helpers & Tests
+## 9. CLI Helpers & Tests
 - Manage users from the CLI: `scripts/manage_user.py create <subject>` outputs API key/JWT and Vault policy instructions.
 - Sample agent smoke tests: `scripts/run_example_agent.sh` (API key/JWT/mTLS modes).
 - Full regression suite: `pytest` (includes metadata round-trip tests for users/agents, correlation header checks, and server routes).
 
-## 9. Logs & Telemetry Files
+## 10. Logs & Telemetry Files
 - Structured JSON logs are stored under `logs/` (`requests.log`, `responses.log`, `server.log`). Use `tail -f logs/requests.log` for live tracking.
 - `config/users.json` and `config/agents.json` persist your UI changes; edit carefully or use the Streamlit pages to modify entries.
 

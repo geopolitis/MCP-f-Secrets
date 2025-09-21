@@ -19,6 +19,7 @@ def test_agent_record_roundtrip():
         llm_api_key="sk-test",
         credential_mode="api_key",
         api_key="secret",
+        secrets_backend="kms",
         tasks=[task],
     )
     data = record.to_dict()
@@ -28,3 +29,4 @@ def test_agent_record_roundtrip():
     assert loaded.tasks[0].title == "demo"
     assert loaded.tasks[0].action == "kv_read"
     assert loaded.llm_provider == "openai"
+    assert loaded.secrets_backend == "kms"

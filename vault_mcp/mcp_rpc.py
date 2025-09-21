@@ -18,6 +18,15 @@ from .vault import (
     kv_undelete as kv_undelete_v2,
     kv_destroy as kv_destroy_v2,
 )
+from .aws_kms import (
+    KMSDisabledError,
+    kms_enabled,
+    kms_decrypt as aws_kms_decrypt,
+    kms_encrypt as aws_kms_encrypt,
+    kms_generate_data_key as aws_kms_generate_data_key,
+    kms_sign as aws_kms_sign,
+    kms_verify as aws_kms_verify,
+)
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
@@ -25,7 +34,7 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 
 
 def _tool_schemas() -> Dict[str, Dict[str, Any]]:
-    return {
+    tools: Dict[str, Dict[str, Any]] = {
         "kv.read": {
             "description": "Read a secret from KV v2 under the agent prefix.",
             "input_schema": {
@@ -197,6 +206,115 @@ def _tool_schemas() -> Dict[str, Dict[str, Any]]:
             "output_schema": {"type": "object", "properties": {"certificate": {"type": "string"}}, "required": ["certificate"]},
         },
     }
+    aws_schema = {
+        "type": "object",
+        "properties": {
+            "access_key_id": {"type": "string"},
+            "secret_access_key": {"type": "string"},
+            "session_token": {"type": "string"},
+            "region": {"type": "string"},
+            "endpoint": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+    tools.update(
+        {
+            "kms.encrypt": {
+                "description": "Encrypt base64 plaintext with AWS KMS (requires AWS_KMS_ENABLED).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key_id": {"type": "string"},
+                        "plaintext": {"type": "string"},
+                        "encryption_context": {"type": "object", "additionalProperties": {"type": "string"}},
+                        "grant_tokens": {"type": "array", "items": {"type": "string"}},
+                        "aws": aws_schema,
+                    },
+                    "required": ["plaintext"],
+                    "additionalProperties": False,
+                },
+                "output_schema": {"type": "object", "properties": {"ciphertext": {"type": "string"}}, "required": ["ciphertext"]},
+            },
+            "kms.decrypt": {
+                "description": "Decrypt AWS KMS ciphertext (requires AWS_KMS_ENABLED).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ciphertext": {"type": "string"},
+                        "encryption_context": {"type": "object", "additionalProperties": {"type": "string"}},
+                        "grant_tokens": {"type": "array", "items": {"type": "string"}},
+                        "aws": aws_schema,
+                    },
+                    "required": ["ciphertext"],
+                    "additionalProperties": False,
+                },
+                "output_schema": {"type": "object", "properties": {"plaintext": {"type": "string"}}, "required": ["plaintext"]},
+            },
+            "kms.generate_data_key": {
+                "description": "Generate a data key via AWS KMS (requires AWS_KMS_ENABLED).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key_id": {"type": "string"},
+                        "key_spec": {"type": "string"},
+                        "number_of_bytes": {"type": "integer"},
+                        "encryption_context": {"type": "object", "additionalProperties": {"type": "string"}},
+                        "grant_tokens": {"type": "array", "items": {"type": "string"}},
+                        "aws": aws_schema,
+                    },
+                    "required": [],
+                    "additionalProperties": False,
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key_id": {"type": "string"},
+                        "ciphertext": {"type": "string"},
+                        "plaintext": {"type": "string"},
+                    },
+                    "required": ["ciphertext", "plaintext"],
+                },
+            },
+            "kms.sign": {
+                "description": "Sign a message using AWS KMS (requires AWS_KMS_ENABLED).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key_id": {"type": "string"},
+                        "message": {"type": "string"},
+                        "message_digest": {"type": "string"},
+                        "signing_algorithm": {"type": "string"},
+                        "message_type": {"type": "string"},
+                        "grant_tokens": {"type": "array", "items": {"type": "string"}},
+                        "aws": aws_schema,
+                    },
+                    "required": ["signing_algorithm"],
+                    "additionalProperties": False,
+                },
+                "output_schema": {"type": "object", "properties": {"signature": {"type": "string"}}, "required": ["signature"]},
+            },
+            "kms.verify": {
+                "description": "Verify a signature with AWS KMS (requires AWS_KMS_ENABLED).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key_id": {"type": "string"},
+                        "signature": {"type": "string"},
+                        "message": {"type": "string"},
+                        "message_digest": {"type": "string"},
+                        "signing_algorithm": {"type": "string"},
+                        "message_type": {"type": "string"},
+                        "grant_tokens": {"type": "array", "items": {"type": "string"}},
+                        "aws": aws_schema,
+                    },
+                    "required": ["signature", "signing_algorithm"],
+                    "additionalProperties": False,
+                },
+                "output_schema": {"type": "object", "properties": {"valid": {"type": "boolean"}}, "required": ["valid"]},
+            },
+        }
+    )
+    return tools
 
 
 def _jsonrpc_response(id: Any, result: Any = None, error: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -265,6 +383,8 @@ def _require_scopes(p: Principal, needed: List[str]):
 
 async def _handle_tool_call_async(name: str, args: Dict[str, Any], p: Principal) -> Any:
     client = client_for_principal(p)
+    if name.startswith("kms.") and not kms_enabled():
+        raise RuntimeError("AWS KMS support is disabled")
     if name == "kv.read":
         _require_scopes(p, ["read"])
         rel = kv_safe_path(p.vault_path_prefix, args.get("path", ""))
@@ -350,6 +470,86 @@ async def _handle_tool_call_async(name: str, args: Dict[str, Any], p: Principal)
             import base64
             out = base64.b64decode(b64).hex()
         return {"random": out, "format": fmt}
+    if name == "kms.encrypt":
+        _require_scopes(p, ["write"])
+        creds = args.get("aws") if isinstance(args.get("aws"), dict) else None
+        try:
+            return {
+                "ciphertext": aws_kms_encrypt(
+                    key_id=args.get("key_id"),
+                    plaintext_b64=args.get("plaintext"),
+                    encryption_context=args.get("encryption_context"),
+                    grant_tokens=args.get("grant_tokens"),
+                    credentials=creds,
+                )
+            }
+        except (KMSDisabledError, ValueError) as exc:
+            raise RuntimeError(str(exc))
+    if name == "kms.decrypt":
+        _require_scopes(p, ["read"])
+        creds = args.get("aws") if isinstance(args.get("aws"), dict) else None
+        try:
+            return {
+                "plaintext": aws_kms_decrypt(
+                    ciphertext_b64=args.get("ciphertext"),
+                    encryption_context=args.get("encryption_context"),
+                    grant_tokens=args.get("grant_tokens"),
+                    credentials=creds,
+                )
+            }
+        except (KMSDisabledError, ValueError) as exc:
+            raise RuntimeError(str(exc))
+    if name == "kms.generate_data_key":
+        _require_scopes(p, ["write"])
+        creds = args.get("aws") if isinstance(args.get("aws"), dict) else None
+        try:
+            return {
+                **aws_kms_generate_data_key(
+                    key_id=args.get("key_id"),
+                    key_spec=args.get("key_spec"),
+                    number_of_bytes=args.get("number_of_bytes"),
+                    encryption_context=args.get("encryption_context"),
+                    grant_tokens=args.get("grant_tokens"),
+                    credentials=creds,
+                )
+            }
+        except (KMSDisabledError, ValueError) as exc:
+            raise RuntimeError(str(exc))
+    if name == "kms.sign":
+        _require_scopes(p, ["write"])
+        creds = args.get("aws") if isinstance(args.get("aws"), dict) else None
+        try:
+            return {
+                "signature": aws_kms_sign(
+                    key_id=args.get("key_id"),
+                    message_b64=args.get("message"),
+                    message_digest_b64=args.get("message_digest"),
+                    signing_algorithm=args.get("signing_algorithm"),
+                    message_type=args.get("message_type"),
+                    grant_tokens=args.get("grant_tokens"),
+                    credentials=creds,
+                )
+            }
+        except (KMSDisabledError, ValueError) as exc:
+            raise RuntimeError(str(exc))
+    if name == "kms.verify":
+        _require_scopes(p, ["read"])
+        creds = args.get("aws") if isinstance(args.get("aws"), dict) else None
+        try:
+            return {
+                "valid": aws_kms_verify(
+                    key_id=args.get("key_id"),
+                    signature_b64=args.get("signature"),
+                    message_b64=args.get("message"),
+                    message_digest_b64=args.get("message_digest"),
+                    signing_algorithm=args.get("signing_algorithm"),
+                    message_type=args.get("message_type"),
+                    grant_tokens=args.get("grant_tokens"),
+                    credentials=creds,
+                )
+            }
+        except (KMSDisabledError, ValueError) as exc:
+            raise RuntimeError(str(exc))
     # DB tools
     if name == "db.issue_creds":
         _require_scopes(p, ["write"])

@@ -7,9 +7,11 @@ def test_readyz_authenticated(client, monkeypatch):
     import vault_mcp.routes.health as health
     monkeypatch.setattr(health, "new_vault_client", lambda: c)
     r = client.get("/readyz")
+    body = r.json()
     assert r.status_code == 200
-    assert r.json().get("ok") is True
-    assert r.json().get("vault") == "ready"
+    assert body.get("ok") is True
+    assert body.get("vault", {}).get("ok") is True
+    assert body.get("vault", {}).get("detail") == "ready"
 
 
 def test_readyz_unauthenticated(client, monkeypatch):
@@ -17,9 +19,11 @@ def test_readyz_unauthenticated(client, monkeypatch):
     import vault_mcp.routes.health as health
     monkeypatch.setattr(health, "new_vault_client", lambda: c)
     r = client.get("/readyz")
+    body = r.json()
     assert r.status_code == 503
-    assert r.json().get("ok") is False
-    assert r.json().get("vault") == "unauthenticated"
+    assert body.get("ok") is False
+    assert body.get("vault", {}).get("ok") is False
+    assert body.get("vault", {}).get("detail") == "Vault token unauthenticated"
 
 
 def test_readyz_vault_error(client, monkeypatch):
@@ -29,9 +33,11 @@ def test_readyz_vault_error(client, monkeypatch):
         raise hvac.exceptions.VaultError("fail")
     monkeypatch.setattr(health, "new_vault_client", boom)
     r = client.get("/readyz")
+    body = r.json()
     assert r.status_code == 503
-    assert r.json().get("ok") is False
-    assert r.json().get("vault") == "error"
+    assert body.get("ok") is False
+    assert body.get("vault", {}).get("ok") is False
+    assert "Vault error" in body.get("vault", {}).get("detail", "")
 
 
 def test_readyz_generic_error(client, monkeypatch):
@@ -40,4 +46,3 @@ def test_readyz_generic_error(client, monkeypatch):
     r = client.get("/readyz")
     assert r.status_code == 503
     assert r.json().get("ok") is False
-

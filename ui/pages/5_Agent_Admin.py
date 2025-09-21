@@ -54,6 +54,11 @@ TASK_LABELS = {
     "mcp_tool": "MCP Tool Call",
 }
 STATUS_CHOICES = ("pending", "in_progress", "completed", "failed")
+BACKEND_OPTIONS = {
+    "Vault": "vault",
+    "AWS KMS": "kms",
+    "Hybrid": "hybrid",
+}
 
 
 def _agent_headers(agent: AgentRecord) -> Tuple[Dict[str, str], Optional[str]]:
@@ -173,12 +178,14 @@ for agent in agents:
     status_counts = {status: 0 for status in STATUS_CHOICES}
     for task in agent.tasks:
         status_counts[task.status] = status_counts.get(task.status, 0) + 1
+    backend_display = next((label for label, value in BACKEND_OPTIONS.items() if value == agent.secrets_backend), agent.secrets_backend)
     rows.append(
         {
             "Name": agent.name,
             "Use LLM": "Yes" if agent.use_llm else "No",
             "LLM Provider": agent.llm_provider or "-",
             "Credential": agent.credential_subject if agent.credential_mode == "linked" else agent.credential_mode,
+            "Secrets backend": backend_display,
             "Tasks": str(len(agent.tasks)),
             "Completed": str(status_counts.get("completed", 0)),
             "In progress": str(status_counts.get("in_progress", 0)),
@@ -206,6 +213,8 @@ with tab_overview:
             df_view["Name"].str.contains(filter_text, case=False, na=False)
             |
             df_view["Credential"].str.contains(filter_text, case=False, na=False)
+            |
+            df_view["Secrets backend"].str.contains(filter_text, case=False, na=False)
         )
         df_view = df_view[mask]
     st.dataframe(df_view, hide_index=True, use_container_width=True)
@@ -260,6 +269,7 @@ with tab_create:
     st.subheader("Create new agent")
     new_name = st.text_input("Agent name", key="agent_name")
     new_description = st.text_area("Description", key="agent_description")
+    backend_label = st.selectbox("Secrets backend", list(BACKEND_OPTIONS.keys()), index=0, key="agent-backend")
     use_llm = st.checkbox("Enable LLM", value=True, key="agent-use-llm")
     llm_provider = None
     llm_api_key = None
@@ -307,6 +317,7 @@ with tab_create:
                 credential_subject=linked_subject if cred_mode == "Linked user" else None,
                 api_key=api_key_value if cred_mode == "API key" else None,
                 jwt=jwt_value if cred_mode == "JWT" else None,
+                secrets_backend=BACKEND_OPTIONS[backend_label],
             )
             upsert_agent(record)
             st.success(f"Agent `{new_name}` created.")
@@ -329,25 +340,34 @@ with tab_manage:
                 with detail_cols[0]:
                     with st.form(f"agent-details-{agent.name}"):
                         desc_edit = st.text_area("Description", value=agent.description or "", key=f"desc-{agent.name}")
+                        backend_label_edit = st.selectbox(
+                            "Secrets backend",
+                            list(BACKEND_OPTIONS.keys()),
+                            index=list(BACKEND_OPTIONS.values()).index(agent.secrets_backend) if agent.secrets_backend in BACKEND_OPTIONS.values() else 0,
+                            key=f"backend-{agent.name}",
+                        )
                         llm_edit = st.checkbox("Enable LLM", value=agent.use_llm, key=f"llm-{agent.name}")
-                        provider_options = ["OpenAI", "Anthropic", "Custom"]
-                        default_provider_idx = (
-                            provider_options.index(agent.llm_provider)
-                            if agent.llm_provider in provider_options
-                            else 0
-                        )
-                        llm_provider_edit = st.selectbox(
-                            "LLM provider",
-                            provider_options,
-                            index=default_provider_idx,
-                            key=f"llm-provider-{agent.name}",
-                        )
-                        llm_api_key_edit = st.text_input(
-                            "LLM API key",
-                            value=agent.llm_api_key or "",
-                            type="password",
-                            key=f"llm-key-{agent.name}",
-                        )
+                        llm_provider_edit = None
+                        llm_api_key_edit = None
+                        if llm_edit:
+                            provider_options = ["OpenAI", "Anthropic", "Custom"]
+                            default_provider_idx = (
+                                provider_options.index(agent.llm_provider)
+                                if agent.llm_provider in provider_options
+                                else 0
+                            )
+                            llm_provider_edit = st.selectbox(
+                                "LLM provider",
+                                provider_options,
+                                index=default_provider_idx,
+                                key=f"llm-provider-{agent.name}",
+                            )
+                            llm_api_key_edit = st.text_input(
+                                "LLM API key",
+                                value=agent.llm_api_key or "",
+                                type="password",
+                                key=f"llm-key-{agent.name}",
+                            )
 
                         cred_mode_edit = st.radio(
                             "Credential mode",
@@ -382,6 +402,7 @@ with tab_manage:
                                 st.error("LLM API key required when LLM is enabled.")
                             else:
                                 agent.description = desc_edit
+                                agent.secrets_backend = BACKEND_OPTIONS[backend_label_edit]
                                 agent.use_llm = llm_edit
                                 agent.llm_provider = llm_provider_edit if llm_edit else None
                                 agent.llm_api_key = llm_api_key_edit if llm_edit else None
@@ -397,18 +418,19 @@ with tab_manage:
 
                 with detail_cols[1]:
                     st.write("Credentials preview")
-                    if agent.credential_mode == "linked":
-                        st.info(f"Linked subject: {agent.credential_subject or 'n/a'}")
-                    elif agent.credential_mode == "api_key":
-                        st.code(agent.api_key or "-", language="text")
+                if agent.credential_mode == "linked":
+                    st.info(f"Linked subject: {agent.credential_subject or 'n/a'}")
+                elif agent.credential_mode == "api_key":
+                    st.code(agent.api_key or "-", language="text")
+                else:
+                    st.code(agent.jwt or "-", language="text")
+                st.info(f"Secrets backend plan: {agent.secrets_backend}")
+                if agent.use_llm:
+                    st.info(f"LLM provider: {agent.llm_provider or 'n/a'}")
+                    if agent.llm_api_key:
+                        st.code((agent.llm_api_key[:6] + "…"), language="text")
                     else:
-                        st.code(agent.jwt or "-", language="text")
-                    if agent.use_llm:
-                        st.info(f"LLM provider: {agent.llm_provider or 'n/a'}")
-                        if agent.llm_api_key:
-                            st.code((agent.llm_api_key[:6] + "…"), language="text")
-                        else:
-                            st.warning("LLM enabled but no API key set.")
+                        st.warning("LLM enabled but no API key set.")
 
             with tab_tasks:
                 task_upload = st.file_uploader(

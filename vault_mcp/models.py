@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 class Principal(BaseModel):
     subject: str
@@ -62,3 +62,74 @@ class SSHSignOp(BaseModel):
     cert_type: Optional[str] = "user"
     valid_principals: Optional[str] = None
     ttl: Optional[str] = None
+
+
+class AwsCredentialOverride(BaseModel):
+    access_key_id: Optional[str] = None
+    secret_access_key: Optional[str] = None
+    session_token: Optional[str] = None
+    region: Optional[str] = None
+    endpoint: Optional[str] = None
+
+
+class KmsEncryptRequest(BaseModel):
+    key_id: Optional[str] = None
+    plaintext: str
+    encryption_context: Optional[Dict[str, str]] = None
+    grant_tokens: Optional[List[str]] = None
+    aws: Optional[AwsCredentialOverride] = None
+
+
+class KmsDecryptRequest(BaseModel):
+    ciphertext: str
+    encryption_context: Optional[Dict[str, str]] = None
+    grant_tokens: Optional[List[str]] = None
+    aws: Optional[AwsCredentialOverride] = None
+
+
+class KmsDataKeyRequest(BaseModel):
+    key_id: Optional[str] = None
+    key_spec: Optional[str] = None
+    number_of_bytes: Optional[int] = Field(default=None, ge=1)
+    encryption_context: Optional[Dict[str, str]] = None
+    grant_tokens: Optional[List[str]] = None
+    aws: Optional[AwsCredentialOverride] = None
+
+    @model_validator(mode="after")
+    def validate_choice(cls, values: "KmsDataKeyRequest") -> "KmsDataKeyRequest":
+        if not values.key_spec and not values.number_of_bytes:
+            raise ValueError("Either key_spec or number_of_bytes must be provided")
+        return values
+
+
+class KmsSignRequest(BaseModel):
+    key_id: Optional[str] = None
+    message: Optional[str] = None
+    message_digest: Optional[str] = None
+    signing_algorithm: str
+    message_type: Optional[str] = None
+    grant_tokens: Optional[List[str]] = None
+    aws: Optional[AwsCredentialOverride] = None
+
+    @model_validator(mode="after")
+    def ensure_payload(cls, values: "KmsSignRequest") -> "KmsSignRequest":
+        if not values.message and not values.message_digest:
+            raise ValueError("Either message or message_digest is required")
+        return values
+
+
+class KmsVerifyRequest(BaseModel):
+    key_id: Optional[str] = None
+    signature: str
+    message: Optional[str] = None
+    message_digest: Optional[str] = None
+    signing_algorithm: str
+    message_type: Optional[str] = None
+    grant_tokens: Optional[List[str]] = None
+    aws: Optional[AwsCredentialOverride] = None
+
+    @model_validator(mode="after")
+    def ensure_payload(cls, values: "KmsVerifyRequest") -> "KmsVerifyRequest":
+        if not values.message and not values.message_digest:
+            raise ValueError("Either message or message_digest is required")
+        return values

@@ -17,6 +17,7 @@ from .routes.health import router as health_router
 from .routes.debug import router as debug_router
 from .routes.db import router as db_router
 from .routes.ssh import router as ssh_router
+from .routes.kms import router as kms_router
 from .mcp_mount import mount_fastapi_mcp
 from .routes.oauth_metadata import router as oauth_meta_router
 from .mcp_rpc import router as mcp_rpc_router
@@ -274,6 +275,7 @@ def create_app() -> FastAPI:
         app.include_router(db_router)
         app.include_router(ssh_router)
         app.include_router(debug_router)
+        app.include_router(kms_router)
     # JSON-RPC MCP endpoints (HTTP transport)
     app.include_router(mcp_rpc_router)
     # OAuth metadata (discovery)

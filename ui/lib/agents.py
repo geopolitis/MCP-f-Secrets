@@ -60,6 +60,7 @@ class AgentRecord:
     credential_subject: Optional[str] = None
     api_key: Optional[str] = None
     jwt: Optional[str] = None
+    secrets_backend: str = "vault"  # vault | kms | hybrid
     tasks: List[TaskRecord] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -83,6 +84,7 @@ class AgentRecord:
             credential_subject=data.get("credential_subject"),
             api_key=data.get("api_key"),
             jwt=data.get("jwt"),
+            secrets_backend=str(data.get("secrets_backend", "vault")),
             tasks=tasks,
             created_at=str(data.get("created_at", datetime.now(timezone.utc).isoformat())),
             updated_at=str(data.get("updated_at", datetime.now(timezone.utc).isoformat())),
@@ -99,6 +101,7 @@ class AgentRecord:
             "credential_subject": self.credential_subject,
             "api_key": self.api_key,
             "jwt": self.jwt,
+            "secrets_backend": self.secrets_backend,
             "tasks": [task.to_dict() for task in self.tasks],
             "created_at": self.created_at,
             "updated_at": self.updated_at,

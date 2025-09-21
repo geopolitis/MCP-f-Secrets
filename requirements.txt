@@ -13,3 +13,5 @@ opentelemetry-api>=1.27.0
 opentelemetry-sdk>=1.27.0
 opentelemetry-instrumentation-fastapi>=0.48b0
 opentelemetry-exporter-otlp>=1.27.0
+boto3>=1.34.0
+moto[kms]>=5.0.5

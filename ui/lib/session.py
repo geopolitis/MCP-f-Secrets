@@ -20,8 +20,11 @@ class AuthState:
     use_jwt: bool = False
     selected_profile: Optional[str] = None
     cached_profiles: Dict[str, Dict[str, Optional[str]]] = field(default_factory=dict)
-    use_api_key: bool = True
-    use_jwt: bool = False
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+    aws_region: Optional[str] = None
+    aws_kms_endpoint: Optional[str] = None
 
 
 _STATE_KEY = "fastmcp_auth_state"

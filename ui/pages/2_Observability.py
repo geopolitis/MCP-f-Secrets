@@ -33,6 +33,10 @@ def current_headers() -> Dict[str, str]:
 
 def _cached_get(url: str, header_items: Tuple[Tuple[str, str], ...]) -> httpx.Response:
     resp = httpx.get(url, headers=dict(header_items), timeout=5.0)
+    if resp.status_code == 401:
+        raise RuntimeError("Unauthorized (401). Ensure your API key or JWT is set and includes the 'read' scope.")
+    if resp.status_code == 403:
+        raise RuntimeError("Forbidden (403). The current credentials are missing the required 'read' scope.")
     resp.raise_for_status()
     return resp
 
@@ -77,6 +81,10 @@ def render_missing_creds():
 headers_tuple = tuple(current_headers().items())
 if not headers_tuple:
     render_missing_creds()
+    st.stop()
+elif not any(k.lower() in {"x-api-key", "authorization"} for k, _ in headers_tuple):
+    render_missing_creds()
+    st.stop()
 else:
     health_tab, metrics_tab, logs_tab = st.tabs(["Health", "Metrics", "Logs"])
 
@@ -139,9 +147,16 @@ else:
                     params={"limit": limit},
                     timeout=5.0,
                 )
+                if resp.status_code == 401:
+                    raise RuntimeError("Unauthorized (401). Configure API key or JWT with 'read' scope in the sidebar.")
+                if resp.status_code == 403:
+                    raise RuntimeError("Forbidden (403). The current credentials do not have the 'read' scope required for log access.")
                 resp.raise_for_status()
                 data = resp.json().get("entries", [])
-                st.dataframe(data)
+                if not data:
+                    st.info("No log entries returned for the selected file/limit.")
+                else:
+                    st.dataframe(data)
             except Exception as exc:
                 st.error(f"Log fetch failed: {exc}")
         st.caption("Use the metrics tab to monitor 4xx/5xx spikes alongside these logs.")

@@ -33,6 +33,10 @@ default_index = 0
 if auth_state.selected_profile and auth_state.selected_profile in profile_options:
     default_index = profile_options.index(auth_state.selected_profile)
 
+# Ensure sidebar widgets have session-backed buffers so secrets persist across reruns.
+st.session_state.setdefault("api_key_buffer", auth_state.api_key or "")
+st.session_state.setdefault("jwt_buffer", auth_state.jwt or "")
+
 with st.sidebar:
     st.header("Connection")
     host = st.text_input("Service URL", value=auth_state.host, help="FastAPI base URL")
@@ -45,40 +49,48 @@ with st.sidebar:
                 host=host,
                 api_key=selected_user.api_key,
                 jwt=selected_user.jwt,
-                use_api_key=bool(selected_user.api_key),
-                use_jwt=bool(selected_user.jwt),
+                use_api_key=True if selected_user.api_key else auth_state.use_api_key,
+                use_jwt=True if selected_user.jwt else auth_state.use_jwt,
                 selected_profile=selected_user.subject,
             )
+            st.session_state["api_key_buffer"] = selected_user.api_key or ""
+            st.session_state["jwt_buffer"] = selected_user.jwt or ""
             record_activity(selected_user.subject)
             st.experimental_rerun()
     elif profile_choice == "Custom" and auth_state.selected_profile is not None:
         update_auth_state(selected_profile=None)
+        st.session_state["api_key_buffer"] = auth_state.api_key or ""
+        st.session_state["jwt_buffer"] = auth_state.jwt or ""
         st.experimental_rerun()
 
     auth_state = get_auth_state()
 
     st.subheader("Credentials")
-    use_api_key = st.checkbox("Use API Key", value=auth_state.use_api_key)
-    api_key = (
-        st.text_input("API Key", value=auth_state.api_key or "", type="password")
-        if use_api_key
-        else None
-    )
+    use_api_key = st.checkbox("Use API Key", value=auth_state.use_api_key, key="sidebar-use-api")
+    if use_api_key:
+        api_key = st.text_input("API Key", type="password", key="api_key_buffer")
+        if st.session_state.get("api_key_buffer"):
+            st.caption("API key stored (hidden for safety)")
+    else:
+        api_key = None
 
-    use_jwt = st.checkbox("Use JWT", value=auth_state.use_jwt)
-    jwt = (
-        st.text_input("JWT Token", value=auth_state.jwt or "", type="password")
-        if use_jwt
-        else None
-    )
+    use_jwt = st.checkbox("Use JWT", value=auth_state.use_jwt, key="sidebar-use-jwt")
+    if use_jwt:
+        jwt = st.text_input("JWT Token", type="password", key="jwt_buffer")
+        if st.session_state.get("jwt_buffer"):
+            st.caption("JWT stored (hidden for safety)")
+    else:
+        jwt = None
 
     use_mtls = st.checkbox("Use mTLS headers from reverse proxy", value=auth_state.use_mtls)
 
     if st.button("Save session", type="primary"):
+        final_api_key = (api_key or st.session_state.get("api_key_buffer", "")).strip() if use_api_key else None
+        final_jwt = (jwt or st.session_state.get("jwt_buffer", "")).strip() if use_jwt else None
         update_auth_state(
             host=host,
-            api_key=api_key,
-            jwt=jwt,
+            api_key=final_api_key,
+            jwt=final_jwt,
             use_mtls=use_mtls,
             use_api_key=use_api_key,
             use_jwt=use_jwt,
