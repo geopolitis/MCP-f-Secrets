@@ -52,7 +52,7 @@ fi
 
 # Ensure example deps are present
 MISSING=$($PY - <<'PY'
-mods=['httpx']
+mods=['httpx', 'langchain']
 missing=[]
 for m in mods:
   try:
@@ -67,13 +67,7 @@ if [ -n "$MISSING" ]; then
   $PY -m pip install -r examples/langchain_agent/requirements.txt
 fi
 
-export VAULT_MCP_BASE_URL="$BASE"
-
-if [ "$NO_LLM" = "1" ]; then
-  export VAULT_MCP_BASE_URL="$BASE"
-  echo "[agent] Running no‑LLM MCP agent against $BASE"
-  exec $PY -m examples.langchain_agent.agent_no_llm --base "$BASE" --path configs/no_llm
-fi
+AGENT_MODULE="examples.langchain_agent.agent"
 
 case "$AUTH_MODE" in
   jwt)
@@ -81,19 +75,27 @@ case "$AUTH_MODE" in
       echo "[agent] --jwt requires a token string" >&2; exit 2
     fi
     export VAULT_MCP_BEARER_TOKEN="$JWT_TOKEN"
+    AGENT_MODULE="examples.langchain_agent.agent_mcp_jwt"
     echo "[agent] Running JWT agent against $BASE"
-    exec $PY -m examples.langchain_agent.agent_mcp_jwt --input "$INPUT"
     ;;
   mtls)
-    # Simulate proxy-terminated mTLS via headers
     export VAULT_MCP_MTLS_DN=${VAULT_MCP_MTLS_DN:-CN=agent_mtls,OU=dev}
     export VAULT_MCP_MTLS_VERIFY=${VAULT_MCP_MTLS_VERIFY:-SUCCESS}
+    AGENT_MODULE="examples.langchain_agent.agent_mcp_mtls"
     echo "[agent] Running mTLS header agent against $BASE"
-    exec $PY -m examples.langchain_agent.agent_mcp_mtls --input "$INPUT"
     ;;
   api|*)
     export VAULT_MCP_API_KEY="$API_KEY"
+    AGENT_MODULE="examples.langchain_agent.agent"
     echo "[agent] Running API-key agent against $BASE (key=$API_KEY)"
-    exec $PY -m examples.langchain_agent.agent --input "$INPUT"
     ;;
 esac
+
+export VAULT_MCP_BASE_URL="$BASE"
+
+if [ "$NO_LLM" = "1" ]; then
+  echo "[agent] Running no‑LLM MCP agent against $BASE"
+  exec $PY -m examples.langchain_agent.agent_no_llm --base "$BASE" --path configs/no_llm
+fi
+
+exec $PY -m "$AGENT_MODULE" --input "$INPUT"

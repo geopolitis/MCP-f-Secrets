@@ -16,9 +16,19 @@ fi
 
 # Ensure dependencies are installed
 MISSING=$($PY_BIN - <<'PY'
-import importlib, sys
-mods=['fastapi','hvac','jose']
-missing=[m for m in mods if importlib.util.find_spec(m) is None]
+import sys
+
+mods = ['fastapi', 'hvac', 'jose']
+
+def has_module(name: str) -> bool:
+    try:
+        import importlib.util  # type: ignore
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, AttributeError):
+        import pkgutil
+        return pkgutil.find_loader(name) is not None
+
+missing = [m for m in mods if not has_module(m)]
 sys.stdout.write(' '.join(missing))
 PY
 )
