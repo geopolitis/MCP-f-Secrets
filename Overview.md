@@ -19,7 +19,7 @@ Operational Glue: Structured logs, Prometheus metrics, OTEL hooks, and e2e scrip
 
 Agent Profiles
 
-Agents defined in the Streamlit admin live in `config/agents.json`. Set `use_llm` to `false` and omit the provider/key fields to create a tool-only runner. Example entry:
+Agents defined in the Streamlit admin live in `ui/config/agents.json`. Set `use_llm` to `false` and omit the provider/key fields to create a tool-only runner. Example entry:
 
 ```json
 [
@@ -44,7 +44,7 @@ Agents defined in the Streamlit admin live in `config/agents.json`. Set `use_llm
 
 Restarting the UI will pick up the change, or you can create the profile through the **Agent Admin** page by unchecking **Enable LLM** before saving.
 You can also upload a JSON file with one or more agent records directly from the **Import agent profiles** section in the admin UI to seed environments quickly.
-Within each agent, the Tasks panel accepts JSON uploads so you can attach existing task definitions without retyping them.
+Within each agent, the Tasks panel accepts JSON uploads so you can attach existing task definitions without retyping them. These runtime JSON files live under `ui/config/` and stay out of version control.
 The admin console groups controls into **Overview**, **Import**, **Create**, and **Manage** tabs so you can scan the roster, bulk load JSON, add fresh agents, or tune a single profile (including task uploads) without scrolling.
 Inside **Manage**, the **Details**, **Tasks**, and **Danger zone** subtabs separate editing, task operations, and destructive actions so critical buttons (like delete) stay grouped and deliberate.
 

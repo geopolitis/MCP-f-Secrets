@@ -66,7 +66,7 @@ The **AI Agent Administration** page manages application-facing agents:
 3. **Create tab** – define name/description, toggle LLM, select credential mode (linked user/API key/JWT), then click *Create*. 
 4. **Manage tab** – pick an agent to update metadata, toggle LLM, adjust credentials, upload task JSON (object or list), add manual tasks, change status/notes, or run tasks. Use the **Danger zone** subtab to delete the agent after explicit confirmation.
 
-All agent data is persisted in `config/agents.json` so the configuration survives restarts.
+All agent data is persisted in `ui/config/agents.json` so the configuration survives restarts, but the repository keeps this directory gitignored so each environment maintains its own state.
 
 ## 7. Correlation, Tracing & Metrics
 - Every HTTP response carries `X-Correlation-Id`. When OTEL is configured (`OTEL_EXPORTER_OTLP_ENDPOINT`), `X-Trace-Id` accompanies it for cross-system tracing.

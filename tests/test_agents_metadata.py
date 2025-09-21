@@ -14,7 +14,9 @@ def test_agent_record_roundtrip():
     record = AgentRecord(
         name="agent-alpha",
         description="demo",
-        use_llm=False,
+        use_llm=True,
+        llm_provider="openai",
+        llm_api_key="sk-test",
         credential_mode="api_key",
         api_key="secret",
         tasks=[task],
@@ -24,3 +26,5 @@ def test_agent_record_roundtrip():
     assert loaded.name == "agent-alpha"
     assert loaded.api_key == "secret"
     assert loaded.tasks[0].title == "demo"
+    assert loaded.tasks[0].action == "kv_read"
+    assert loaded.llm_provider == "openai"
