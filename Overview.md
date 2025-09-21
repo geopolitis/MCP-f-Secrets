@@ -17,6 +17,38 @@ MCP/HTTP Access: JSON-RPC tools and REST routes coexist, and there are smoke-tes
 Operational Glue: Structured logs, Prometheus metrics, OTEL hooks, and e2e scripts (scripts/e2e_local.sh) handle observability and local verification.
 
 
+Agent Profiles
+
+Agents defined in the Streamlit admin live in `config/agents.json`. Set `use_llm` to `false` and omit the provider/key fields to create a tool-only runner. Example entry:
+
+```json
+[
+  {
+    "name": "vault-runner",
+    "description": "Executes KV rotations via MCP tools",
+    "use_llm": false,
+    "credential_mode": "api_key",
+    "credential_subject": "dev-bot",
+    "api_key": "dev-api-key",
+    "tasks": [
+      {
+        "task_id": "kv-rotate",
+        "title": "Rotate staging configs",
+        "action": "kv_write",
+        "params": {"path": "staging/configs", "payload": {"api_key": "..."}}
+      }
+    ]
+  }
+]
+```
+
+Restarting the UI will pick up the change, or you can create the profile through the **Agent Admin** page by unchecking **Enable LLM** before saving.
+You can also upload a JSON file with one or more agent records directly from the **Import agent profiles** section in the admin UI to seed environments quickly.
+Within each agent, the Tasks panel accepts JSON uploads so you can attach existing task definitions without retyping them.
+The admin console groups controls into **Overview**, **Import**, **Create**, and **Manage** tabs so you can scan the roster, bulk load JSON, add fresh agents, or tune a single profile (including task uploads) without scrolling.
+Inside **Manage**, the **Details**, **Tasks**, and **Danger zone** subtabs separate editing, task operations, and destructive actions so critical buttons (like delete) stay grouped and deliberate.
+
+
 Overview
 
 FastAPI service that fronts HashiCorp Vault features for both REST callers and Model Context Protocol (MCP) tools, exposing secrets, transit crypto, database, and SSH functionality (vault_mcp/app.py:1, vault_mcp/mcp_rpc.py:1).

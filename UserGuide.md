@@ -61,10 +61,10 @@ All actions reuse the sidebar credentials, so you can test multiple users by swi
 ## 6. Administer AI Agents
 The **AI Agent Administration** page manages application-facing agents:
 
-1. **Overview grid** – filter/search agents, inspect LLM usage, credential mode, task counts, and export to CSV.
-2. **Create agent** – define name/description, toggle LLM, select credential mode (linked user/API key/JWT), then click *Create*. 
-3. **Edit agent** – update description, LLM toggle, credentials, or delete the profile. Credential previews allow quick copying.
-4. **Task queue** – add tasks (title + notes), update status (`pending`, `in_progress`, `completed`, `failed`), and remove tasks as needed.
+1. **Overview tab** – filter/search agents, inspect LLM usage, credential mode, task counts, and export to CSV.
+2. **Import tab** – upload a single agent or an array of agents; valid records persist immediately so you can seed environments in bulk.
+3. **Create tab** – define name/description, toggle LLM, select credential mode (linked user/API key/JWT), then click *Create*. 
+4. **Manage tab** – pick an agent to update metadata, toggle LLM, adjust credentials, upload task JSON (object or list), add manual tasks, change status/notes, or run tasks. Use the **Danger zone** subtab to delete the agent after explicit confirmation.
 
 All agent data is persisted in `config/agents.json` so the configuration survives restarts.
 
