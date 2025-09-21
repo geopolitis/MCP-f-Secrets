@@ -18,9 +18,38 @@ Quickstart
   - Easiest: `python main.py` (env: `HOST=0.0.0.0 PORT=8089 RELOAD=true LOG_LEVEL=debug`)
   - Or: `python -m uvicorn main:app --reload`
   - Or factory: `python -m uvicorn vault_mcp.app:create_app --factory --reload`
+- Helper: `scripts/run_dev_jwt.sh` starts the app with Vault + JWT defaults (no manual env export).
 - Sanity checks:
   - `curl http://127.0.0.1:8089/healthz`
   - `bash scripts/smoke.sh` (expects local Vault and default dev auth)
+- Vault access (required before running the server):
+  - Set credentials so the app can authenticate to Vault, e.g. for the bundled dev compose stack:
+    ```bash
+    export VAULT_ADDR=http://127.0.0.1:8200
+    export VAULT_TOKEN=root   # replace with your own token or AppRole
+    ```
+  - Without these env vars (or the AppRole equivalents) `/readyz` will return 503 and observability/secret routes will be unauthorized.
+  - To avoid re-exporting each run you can `source config/dev-jwt.env` (new sample file) before launching, or use `scripts/run_dev_jwt.sh` which applies the same defaults automatically.
+- Optional admin UI:
+  - `python3 -m venv .ui-venv && source .ui-venv/bin/activate`
+  - `pip install -r ui/requirements.txt`
+  - `streamlit run ui/streamlit_app.py`
+  - Use the **Manage Subjects & Keys** page to manage `config/users.json`, rotate credentials, and sync profiles to the sidebar.
+  - JWT helpers in the UI require `JWT_HS256_SECRET` to be set before launch (e.g., `source config/dev-jwt.env` or run `scripts/run_dev_jwt.sh`).
+
+JWT quickstart (HS256):
+- Install helper deps: `pip install 'python-jose[cryptography]'`
+- Generate a token with the bundled script (adjust subject/scopes as needed):
+  - ```
+    python scripts/gen_jwt.py \
+      --secret dev-secret \
+      --issuer mcp-auth \
+      --audience mcp-agents \
+      --sub agent_api \
+      --scopes read,write,delete,list \
+      --ttl 600
+    ```
+- Use the printed value as the `Authorization: Bearer <token>` header when calling the API or configuring the Streamlit console.
 
 Features
 - KV v2 secret CRUD with per-agent prefixes and safe pathing.
@@ -30,12 +59,15 @@ Features
 - Auth: API Key, JWT (HS256 or RS256 via JWKS), mTLS via headers.
 - Child tokens per request (optional); per-agent in-memory rate limiting.
 - MCP: JSON-RPC over HTTP at `POST /mcp/rpc` (with `GET /mcp/sse` keepalive channel) and stdio transport via `scripts/mcp_stdio.py`.
+- Streamlit operations hub: tabs for Secrets, Transit, Database leases (issue/renew/revoke), SSH OTP/signing, and direct MCP tool calls.
+- Streamlit agent admin: create multiple AI agent profiles, toggle LLM usage, assign credentials (linked user/API key/JWT), define tasks, and monitor progress/status.
 - MCP lifecycle: `initialize`, `tools/list`, `resources/list`, `prompts/list`, `tools/call`, `shutdown`. Protocol version: `2025-06-18`.
 - Tools exposed (with required scopes):
   - KV: `kv.read` (read, supports `version`), `kv.write` (write), `kv.list` (list), `kv.delete` (delete), `kv.undelete` (write), `kv.destroy` (write)
   - Transit: `transit.encrypt` (write), `transit.decrypt` (read), `transit.sign` (write), `transit.verify` (read), `transit.rewrap` (write), `transit.random` (read)
   - DB: `db.issue_creds` (write), `db.renew` (write), `db.revoke` (write)
   - SSH: `ssh.otp` (write), `ssh.sign` (write)
+- Observability endpoints: `/observability/summary` (Vault/API status + in-flight requests) and `/observability/logs/{requests|responses|server}` (tail JSON logs, read scope required).
 - Metrics at `/metrics`; optional OpenTelemetry via OTLP HTTP exporter.
 
 Resources
@@ -68,6 +100,8 @@ Configuration (env)
   - `AUTH_API_KEY_ENABLED` (default: true)
   - `AUTH_JWT_ENABLED` (default: true)
   - `AUTH_MTLS_ENABLED` (default: false)
+  - CLI helper: `scripts/manage_user.py create <subject>` writes metadata to `config/users.json` and prints policy/API key export commands.
+  - UI helper: in Streamlit, check “Generate JWT token” to issue a token during user creation. Generation failures show inline errors and the user entry is not written.
 - API Keys:
   - `API_KEYS_JSON` JSON map: `{ "<api-key>": "<agent-id>" }`
 - JWT:
@@ -75,6 +109,8 @@ Configuration (env)
   - HS256: `JWT_HS256_SECRET`
   - RS256/JWKS: `JWT_JWKS_URL` or `JWT_JWKS_FILE`, `JWT_JWKS_CACHE_SECONDS` (default: 300), `JWT_REQUIRE_KID` (default: false)
   - Validation toggles: `JWT_VALIDATE_ISSUER` (default: true), `JWT_VALIDATE_AUDIENCE` (default: true)
+  - Helper: `python scripts/gen_jwt.py --secret <JWT_HS256_SECRET> --sub <agent>` for quick dev tokens (see Quickstart example above).
+  - Metadata persisted per user: `jwt_created_at`, `jwt_expires_at`, `jwt_ttl_seconds`. The Streamlit **Current users** grid surfaces status, timestamps, TTL seconds, and offers CSV export.
 - mTLS via proxy headers:
   - `MTLS_IDENTITY_HEADER` (default: x-ssl-client-s-dn)
   - `MTLS_VERIFY_HEADER` (default: x-ssl-client-verify)
@@ -176,6 +212,7 @@ Troubleshooting Inspector
 Prometheus & OpenTelemetry
 - Prometheus endpoint: `GET /metrics` (text). Quick check: `curl -s http://127.0.0.1:8089/metrics | head`.
 - Metrics include `http_requests_total` and `http_request_duration_seconds` with labels `method`, `route`, `status`.
+- Additional telemetry: `http_requests_with_correlation_total` counts requests that include or receive a correlation ID. Every HTTP response returns `X-Correlation-Id`; if OTEL tracing is enabled, `X-Trace-Id` is also emitted.
 - OpenTelemetry tracing (optional): set `OTEL_EXPORTER_OTLP_ENDPOINT` (e.g., `http://localhost:4318/v1/traces`) and `OTEL_SERVICE_NAME` (default: `vault-mcp`).
 - Structured logs: JSON files under `./logs/` (`requests.log`, `responses.log`, `server.log`). Tail with `tail -f logs/requests.log`.
 

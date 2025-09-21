@@ -5,7 +5,9 @@ import uuid
 import os
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
-from fastapi import FastAPI, Request
+from typing import List
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response as FastAPIResponse
 from fastapi.middleware.cors import CORSMiddleware
 import hvac
@@ -18,8 +20,31 @@ from .routes.ssh import router as ssh_router
 from .mcp_mount import mount_fastapi_mcp
 from .routes.oauth_metadata import router as oauth_meta_router
 from .mcp_rpc import router as mcp_rpc_router
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest, PROCESS_COLLECTOR, PLATFORM_COLLECTOR
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, Histogram, generate_latest, PROCESS_COLLECTOR, PLATFORM_COLLECTOR
 from .settings import settings
+from .security import require_scopes
+from .vault import new_vault_client
+from opentelemetry import trace
+
+
+def _tail_json(path: Path, limit: int) -> List[dict]:
+    if limit <= 0:
+        return []
+    if not path.exists() or not path.is_file():
+        return []
+    lines: List[str] = []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            lines = handle.readlines()[-limit:]
+    except Exception:
+        return []
+    entries: List[dict] = []
+    for raw in lines:
+        try:
+            entries.append(json.loads(raw))
+        except Exception:
+            entries.append({"raw": raw.strip()})
+    return entries
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Vault MCP Bridge", version="0.2.0")
@@ -104,11 +129,21 @@ def create_app() -> FastAPI:
         pass
     http_req_hist = Histogram("http_request_duration_seconds", "Request duration", labelnames=("method", "route", "status"), registry=registry, buckets=(0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2,5))
     http_req_count = Counter("http_requests_total", "Total HTTP requests", labelnames=("method", "route", "status"), registry=registry)
+    http_req_in_flight = Gauge("http_requests_in_progress", "Number of HTTP requests actively being processed", registry=registry)
+    correlation_counter = Counter("http_requests_with_correlation_total", "HTTP requests that carried/received correlation IDs", registry=registry)
+    inflight_tracker = {"value": 0}
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         start = time.time(); request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
         response: FastAPIResponse
+        correlation_id = request.headers.get("x-correlation-id") or str(uuid.uuid4())
+        request.state.correlation_id = correlation_id
+        try:
+            http_req_in_flight.inc()
+            inflight_tracker["value"] += 1
+        except Exception:
+            pass
         try:
             response = await call_next(request)
             return response
@@ -126,11 +161,49 @@ def create_app() -> FastAPI:
             except Exception:
                 pass
             try:
+                http_req_in_flight.dec()
+                inflight_tracker["value"] = max(0, inflight_tracker["value"] - 1)
+            except Exception:
+                inflight_tracker["value"] = max(0, inflight_tracker["value"] - 1)
+            try:
+                response.headers["X-Correlation-Id"] = correlation_id
+            except Exception:
+                pass
+            try:
                 if 'response' in locals() and isinstance(response, FastAPIResponse):
                     response.headers["X-Request-Id"] = request_id
             except Exception:
                 pass
-            req_logger.info("request", extra={"extra": {"request_id": request_id, "client": client_host, "method": request.method, "path": route, "status": status, "duration_ms": int(dur*1000)}})
+            span = trace.get_current_span()
+            trace_id_hex = None
+            if span:
+                ctx = span.get_span_context()
+                if ctx and ctx.trace_id:
+                    trace_id_hex = format(ctx.trace_id, "032x")
+                    try:
+                        response.headers["X-Trace-Id"] = trace_id_hex
+                    except Exception:
+                        pass
+            if correlation_id:
+                try:
+                    correlation_counter.inc()
+                except Exception:
+                    pass
+            req_logger.info(
+                "request",
+                extra={
+                    "extra": {
+                        "request_id": request_id,
+                        "correlation_id": correlation_id,
+                        "trace_id": trace_id_hex,
+                        "client": client_host,
+                        "method": request.method,
+                        "path": route,
+                        "status": status,
+                        "duration_ms": int(dur*1000),
+                    }
+                },
+            )
 
     @app.exception_handler(hvac.exceptions.InvalidPath)
     async def handle_vault_invalid_path(request: Request, exc: hvac.exceptions.InvalidPath):
@@ -147,6 +220,51 @@ def create_app() -> FastAPI:
     @app.get("/metrics")
     async def metrics():
         return FastAPIResponse(content=generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
+
+    @app.get("/observability/summary")
+    async def observability_summary():
+        vault_status = {"ok": False}
+        try:
+            client = new_vault_client()
+            vault_status = {"ok": bool(client.is_authenticated())}
+        except hvac.exceptions.VaultError as exc:
+            vault_status = {"ok": False, "detail": str(exc)}
+        except Exception as exc:
+            vault_status = {"ok": False, "detail": str(exc)}
+
+        recent = _tail_json(logs_dir / "requests.log", 200)
+        recent_4xx = 0
+        recent_5xx = 0
+        for entry in recent:
+            status = str((entry or {}).get("status", ""))
+            if status.startswith("4"):
+                recent_4xx += 1
+            elif status.startswith("5"):
+                recent_5xx += 1
+
+        return {
+            "api": {"ok": True, "in_flight": inflight_tracker["value"]},
+            "vault": vault_status,
+            "mcp": {"ok": True},
+            "recent": {
+                "entries": len(recent),
+                "4xx": recent_4xx,
+                "5xx": recent_5xx,
+            },
+        }
+
+    @app.get("/observability/logs/{log_type}")
+    async def tail_logs(log_type: str, limit: int = 50, _: None = Depends(require_scopes(["read"]))):
+        allowed = {
+            "requests": logs_dir / "requests.log",
+            "responses": logs_dir / "responses.log",
+            "server": logs_dir / "server.log",
+        }
+        if log_type not in allowed:
+            return JSONResponse(status_code=404, content={"detail": "unknown log"})
+        limit = max(1, min(limit, 500))
+        entries = _tail_json(allowed[log_type], limit)
+        return {"log": log_type, "entries": entries}
 
     # Routers
     app.include_router(health_router)

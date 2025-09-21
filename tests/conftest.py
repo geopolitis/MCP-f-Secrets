@@ -16,6 +16,10 @@ def app():
     os.environ["CHILD_TOKEN_ENABLED"] = "false"
     os.environ["SSE_KEEPALIVE_SECONDS"] = "1"
     from vault_mcp.app import create_app
+    from vault_mcp.settings import settings as _settings
+    import json
+    keymap = json.loads(_settings.API_KEYS_JSON or "{}")
+    assert keymap.get("dev-key") == "agent_api"
     return create_app()
 
 
