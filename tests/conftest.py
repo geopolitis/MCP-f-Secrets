@@ -14,7 +14,8 @@ def app():
 
     os.environ["AUTH_API_KEY_ENABLED"] = "true"
     os.environ.pop("API_KEYS_JSON", None)
-    os.environ["API_KEYS_JSON"] = '{"dev-api-key":"agent_api"}'
+    api_keys_json = '{"dev-api-key":"agent_api","dev-key":"agent_api"}'
+    os.environ["API_KEYS_JSON"] = api_keys_json
     os.environ["CHILD_TOKEN_ENABLED"] = "false"
     os.environ["SSE_KEEPALIVE_SECONDS"] = "1"
     os.environ.setdefault("AWS_KMS_ENABLED", "true")
@@ -22,10 +23,10 @@ def app():
 
     from vault_mcp.app import create_app
     from vault_mcp.settings import settings as _settings
-    import json
 
-    keymap = json.loads(_settings.API_KEYS_JSON or "{}")
-    assert keymap.get("dev-api-key") == "agent_api"
+    # Align the singleton settings instance with the environment for tests that read it directly
+    _settings.API_KEYS_JSON = api_keys_json
+
     return create_app()
 
 
