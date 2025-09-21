@@ -30,18 +30,19 @@ def test_kms_encrypt_decrypt_roundtrip(client):
     try:
         aws_kms.reset_kms_client_cache()
         plaintext = base64.b64encode(b"hello-aws-kms").decode()
-    enc = client.post(
-        "/kms/encrypt",
-        headers=HEADERS,
-        json={"plaintext": plaintext, "aws": {"region": region}},
-    )
+        enc = client.post(
+            "/kms/encrypt",
+            headers=HEADERS,
+            json={"plaintext": plaintext, "aws": {"region": region}},
+        )
         assert enc.status_code == 200
         ciphertext = enc.json()["ciphertext"]
-    dec = client.post(
-        "/kms/decrypt",
-        headers=HEADERS,
-        json={"ciphertext": ciphertext, "aws": {"region": region}},
-    )
+
+        dec = client.post(
+            "/kms/decrypt",
+            headers=HEADERS,
+            json={"ciphertext": ciphertext, "aws": {"region": region}},
+        )
         assert dec.status_code == 200
         decrypted = base64.b64decode(dec.json()["plaintext"])
         assert decrypted == b"hello-aws-kms"
